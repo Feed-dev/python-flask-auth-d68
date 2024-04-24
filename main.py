@@ -5,83 +5,106 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Integer, String
 from flask_login import UserMixin, login_user, LoginManager, login_required, current_user, logout_user
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret-key-goes-here'
+# Define the database object globally
+db = SQLAlchemy()
 
 
-# CREATE DATABASE
-class Base(DeclarativeBase):
-    pass
+# Define the User model
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(100), unique=True)
+    password = db.Column(db.String(200))
+    name = db.Column(db.String(1000))
 
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///posts.db'
-db = SQLAlchemy(model_class=Base)
-db.init_app(app)
+def create_app():
+    app = Flask(__name__)
+    app.config['SECRET_KEY'] = 'secret-key-goes-here'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///posts.db'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+    # Initialize plugins
+    db.init_app(app)
 
-# CREATE TABLE IN DB
-class User(db.Model):
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    email: Mapped[str] = mapped_column(String(100), unique=True)
-    password: Mapped[str] = mapped_column(String(100))
-    name: Mapped[str] = mapped_column(String(1000))
+    # Setup login manager
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = 'login'
 
+    @login_manager.user_loader
+    def load_user(user_id):
+        return User.query.get(int(user_id))
 
-with app.app_context():
-    db.create_all()
+    # Create all tables
+    with app.app_context():
+        db.create_all()
 
+    # Define routes
+    @app.route('/')
+    def home():
+        return render_template("index.html")
 
-@app.route('/')
-def home():
-    return render_template("index.html")
+    @app.route('/register', methods=['GET', 'POST'])
+    def register():
+        if request.method == 'POST':
+            name = request.form.get('name')
+            email = request.form.get('email')
+            password = request.form.get('password')
 
+            existing_user = User.query.filter_by(email=email).first()
+            if existing_user:
+                flash('Email address already exists. Please use a different email.', 'error')
+                return redirect(url_for('register'))
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        name = request.form.get('name')
-        email = request.form.get('email')
-        password = request.form.get('password')
+            hashed_password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=8)
+            new_user = User(name=name, email=email, password=hashed_password)
+            db.session.add(new_user)
+            db.session.commit()
 
-        # Check if the email is already in use
-        existing_user = User.query.filter_by(email=email).first()
-        if existing_user:
-            flash('Email address already exists. Please use a different email.', 'error')
-            return redirect(url_for('register'))
+            flash('Registration successful!', 'success')
+            login_user(new_user)
+            return redirect(url_for('secrets'))
 
-        # Create a new user and hash their password
-        new_user = User(name=name, email=email, password=generate_password_hash(password))
-        db.session.add(new_user)
-        db.session.commit()
+        return render_template('register.html')
 
-        flash('Registration successful!', 'success')
-        login_user(new_user)  # Automatically log in the new user
-        return redirect(url_for('secrets'))
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        if request.method == 'POST':
+            email = request.form.get('email')
+            password = request.form.get('password')
+            user = User.query.filter_by(email=email).first()
 
-    return render_template('register.html')
+            if user and check_password_hash(user.password, password):
+                login_user(user)
+                return redirect(url_for('secrets'))
+            else:
+                flash('Invalid email or password.', 'error')
+                return redirect(url_for('login'))
+        return render_template("login.html")
 
+    @app.route('/logout')
+    def logout():
+        logout_user()
+        return redirect(url_for('home'))
 
-@app.route('/login')
-def login():
-    return render_template("login.html")
+    @app.route('/secrets')
+    @login_required
+    def secrets():
+        return render_template("secrets.html", name=current_user.name)
 
+    @app.route('/download')
+    @login_required
+    def download():
+        directory = 'static/files'  # Ensure this path is correct and exists
+        filename = 'cheat_sheet.pdf'
+        try:
+            return send_from_directory(directory, filename, as_attachment=True)
+        except Exception as e:
+            return str(e)  # To display the error if something goes wrong
 
-@app.route('/secrets')
-@login_required
-def secrets():
-    return render_template("secrets.html", name=current_user.name)
-
-
-@app.route('/logout')
-def logout():
-    pass
-
-
-@app.route('/download')
-@login_required
-def download():
-    return send_from_directory('static', path="files/cheat_sheet.pdf")
+    return app
 
 
 if __name__ == "__main__":
+    app = create_app()
     app.run(debug=True)

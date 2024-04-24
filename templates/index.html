@@ -1,16 +1,17 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %}
+{% block content %}
 
-<div class="box">
-  <h1>Flask Authentication</h1>
-  <!-- TODO: Hide the Login/Registration buttons for logged-in users -->
-  <a href="{{ url_for('login') }}" class="btn btn-primary btn-block btn-large"
-    >Login</a
-  >
-  <a
-    href="{{ url_for('register') }}"
-    class="btn btn-secondary btn-block btn-large"
-    >Register</a
-  >
+<div class="container">
+  <div class="box">
+    <h1>Flask Authentication</h1>
+    {% if current_user.is_authenticated %}
+      <p>You are already logged in as {{ current_user.name }}.</p>
+      <a href="{{ url_for('secrets') }}" class="btn btn-primary">Go to Secrets Page</a>
+    {% else %}
+      <a href="{{ url_for('login') }}" class="btn btn-primary btn-block btn-large">Login</a>
+      <a href="{{ url_for('register') }}" class="btn btn-secondary btn-block btn-large">Register</a>
+    {% endif %}
+  </div>
 </div>
 
 {% endblock %}
