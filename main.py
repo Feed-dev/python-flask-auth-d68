@@ -36,9 +36,29 @@ def home():
     return render_template("index.html")
 
 
-@app.route('/register')
+@app.route('/register', methods=['GET', 'POST'])
 def register():
-    return render_template("register.html")
+    if request.method == 'POST':
+        name = request.form.get('name')
+        email = request.form.get('email')
+        password = request.form.get('password')
+
+        # Check if the email is already in use
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            flash('Email address already exists. Please use a different email.', 'error')
+            return redirect(url_for('register'))
+
+        # Create a new user and hash their password
+        new_user = User(name=name, email=email, password=generate_password_hash(password))
+        db.session.add(new_user)
+        db.session.commit()
+
+        flash('Registration successful!', 'success')
+        login_user(new_user)  # Automatically log in the new user
+        return redirect(url_for('secrets'))
+
+    return render_template('register.html')
 
 
 @app.route('/login')
@@ -47,8 +67,9 @@ def login():
 
 
 @app.route('/secrets')
+@login_required
 def secrets():
-    return render_template("secrets.html")
+    return render_template("secrets.html", name=current_user.name)
 
 
 @app.route('/logout')
@@ -57,8 +78,9 @@ def logout():
 
 
 @app.route('/download')
+@login_required
 def download():
-    pass
+    return send_from_directory('static', path="files/cheat_sheet.pdf")
 
 
 if __name__ == "__main__":
